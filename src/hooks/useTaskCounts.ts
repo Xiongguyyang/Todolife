@@ -5,34 +5,47 @@ import { auth } from "@/lib/firebase";
 import { Task, TaskCounts } from "@/types/task";
 
 export function useTaskCounts(): TaskCounts {
-  const [counts, setCounts] = useState<TaskCounts>({ total: 0, pending: 0, completed: 0 });
-  const [email, setEmail] = useState<string | null>(null);
+  const [counts, setCounts] = useState<TaskCounts>({
+    total: 0,
+    pending: 0,
+    completed: 0,
+  });
+  const [user, setUser] = useState<any>(null);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (user) => setEmail(user?.email ?? null));
-    return () => unsub();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    const compute = async () => {
-      if (!email) return;
+    const compute = () => {
+      if (!user) return;
+      const key = `tasks_${user.email}`;
       try {
-        const res = await fetch(`/api/tasks?email=${encodeURIComponent(email)}`);
-        const data = await res.json();
-        const tasks: Task[] = data.tasks ?? [];
+        const tasks: Task[] = JSON.parse(localStorage.getItem(key) || "[]");
         const total = tasks.length;
         const completed = tasks.filter((t) => t.completed).length;
-        setCounts({ total, pending: total - completed, completed });
+        const pending = total - completed;
+        setCounts({ total, pending, completed });
       } catch {
         setCounts({ total: 0, pending: 0, completed: 0 });
       }
     };
-
     compute();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key?.startsWith("tasks")) compute();
+    };
     const onUpdated = () => compute();
+
+    window.addEventListener("storage", onStorage);
     window.addEventListener("tasksUpdated", onUpdated as EventListener);
-    return () => window.removeEventListener("tasksUpdated", onUpdated as EventListener);
-  }, [email]);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("tasksUpdated", onUpdated as EventListener);
+    };
+  }, [user]);
 
   return counts;
 }

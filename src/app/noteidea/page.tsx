@@ -18,53 +18,50 @@ export default function NooteBook() {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editText, setEditText] = useState("");
 
-    const loadIdeas = async (email: string) => {
-        try {
-            const res = await fetch(`/api/ideas?email=${encodeURIComponent(email)}`);
-            const data = await res.json();
-            setIdeas(data.ideas ?? []);
-        } catch (err) {
-            console.error("Failed to load ideas", err);
-        }
-    };
-
-    const saveIdeas = async (email: string, updated: Idea[]) => {
-        await fetch("/api/ideas", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, ideas: updated }),
-        });
-    };
-
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            if (currentUser?.email) loadIdeas(currentUser.email);
+            if (currentUser) {
+                const storeIdeas = localStorage.getItem(`Ideas_${currentUser.email}`);
+                setIdeas(storeIdeas ? JSON.parse(storeIdeas) : []);
+            }
         });
         return () => unsubscribe();
     }, []);
+
+    useEffect(() => {
+        if (user) {
+            const storeIdeas = JSON.parse(localStorage.getItem(`Ideas_${user.email}`) || "[]");
+            setIdeas(storeIdeas);
+        }
+    }, [user]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setCurentIdeas((prev) => ({ ...prev, [name]: value }));
     };
 
-    const handleaddIdea = async () => {
+    const handleaddIdea = () => {
         if (!curentideas.ideatext.trim()) return;
-        if (!user) { toast.error("Please login or signup!"); return; }
-        const newIdea = { id: Date.now(), ...curentideas };
-        const updatedIdeas = [...ideas, newIdea];
-        setIdeas(updatedIdeas);
-        setCurentIdeas({ ideatext: "" });
-        await saveIdeas(user.email, updatedIdeas);
-        window.dispatchEvent(new Event("tasksUpdated"));
+        if (user) {
+            const newIdea = { id: Date.now(), ...curentideas };
+            const updatedIdeas = [...ideas, newIdea];
+            localStorage.setItem(`Ideas_${user.email}`, JSON.stringify(updatedIdeas));
+            setIdeas(updatedIdeas);
+            setCurentIdeas({ ideatext: "" });
+        } else {
+            toast.error("Please login or signup!");
+        }
     };
 
-    const handleDelete = async (id: number) => {
-        const updatedIdeas = ideas.filter((idea) => idea.id !== id);
+    const handleDelete = (id: number) => {
+        const storeIdeas: Idea[] = JSON.parse(localStorage.getItem(`Ideas_${user.email}`) || "[]");
+        const updatedIdeas = storeIdeas.filter((idea) => idea.id !== id);
+        localStorage.setItem(`Ideas_${user.email}`, JSON.stringify(updatedIdeas));
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("updatedIdeas"));
+        }
         setIdeas(updatedIdeas);
-        await saveIdeas(user.email, updatedIdeas);
-        window.dispatchEvent(new Event("tasksUpdated"));
     };
 
     const handleEditStart = (idea: Idea) => {
@@ -72,15 +69,16 @@ export default function NooteBook() {
         setEditText(idea.ideatext);
     };
 
-    const handleEditSave = async (id: number) => {
+    const handleEditSave = (id: number) => {
         if (!editText.trim()) return;
-        const updatedIdeas = ideas.map((idea) =>
+        const storeIdeas: Idea[] = JSON.parse(localStorage.getItem(`Ideas_${user.email}`) || "[]");
+        const updatedIdeas = storeIdeas.map((idea) =>
             idea.id === id ? { ...idea, ideatext: editText } : idea
         );
+        localStorage.setItem(`Ideas_${user.email}`, JSON.stringify(updatedIdeas));
         setIdeas(updatedIdeas);
         setEditingId(null);
         setEditText("");
-        await saveIdeas(user.email, updatedIdeas);
     };
 
     const handleEditCancel = () => {

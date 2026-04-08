@@ -1,12 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)",
-      "Bash(find /c/Users/USER/OneDrive/Documents/GitHub/Todolife -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" -o -name \"*.js\" \\\\\\) -exec grep -l \"firebase\\\\|Firebase\" {} \\\\;)",
-      "Bash(xargs grep:*)",
-      "Bash(ollama serve:*)",
-      "Bash(curl -s http://localhost:11434/api/tags)",
-      "Bash(where ollama:*)"
+      "Bash(npm install:*)"
     ]
   }
 }

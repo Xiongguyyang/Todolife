@@ -123,40 +123,25 @@ export default function TaskList() {
         return () => clearInterval(interval);
     }, [tasks, user]);
 
-    const loadTasks = async (email: string) => {
-        try {
-            const res = await fetch(`/api/tasks?email=${encodeURIComponent(email)}`);
-            const data = await res.json();
-            const all: Task[] = data.tasks ?? [];
-            setTasks(all.filter((t) => !t.completed));
-        } catch (err) {
-            console.error("Error loading tasks:", err);
-        }
-    };
-
-    const saveAndSync = async (email: string, updatedAll: Task[]) => {
-        await fetch("/api/tasks", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, tasks: updatedAll }),
-        });
-        window.dispatchEvent(new Event("tasksUpdated"));
-    };
-
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            if (currentUser?.email) loadTasks(currentUser.email);
+            if (currentUser) {
+                const storedTasks = localStorage.getItem(`tasks${currentUser.email}`);
+                setTasks(storedTasks ? JSON.parse(storedTasks) : []);
+            }
         });
         return () => unsubscribe();
     }, []);
 
     useEffect(() => {
-        if (!user?.email) return;
-        loadTasks(user.email);
-        const onUpdated = () => loadTasks(user.email);
-        window.addEventListener("tasksUpdated", onUpdated as EventListener);
-        return () => window.removeEventListener("tasksUpdated", onUpdated as EventListener);
+        if (!user) return;
+        try {
+            const storedTasks: Task[] = JSON.parse(localStorage.getItem(`tasks_${user.email}`) || "[]");
+            setTasks(storedTasks.filter((t) => !t.completed));
+        } catch (error) {
+            console.error("Error loading tasks:", error);
+        }
     }, [user]);
 
     const handleEditClick = (task: Task) => {
@@ -168,22 +153,37 @@ export default function TaskList() {
         setEditPopup(true);
     };
 
-    const handleDelete = async (id: number) => {
-        const updatedAll = tasks.filter((t) => t.id !== id);
-        setTasks(updatedAll);
-        await saveAndSync(user.email, updatedAll);
+    const handleDelete = (id: number) => {
+        const storedTasks: Task[] = JSON.parse(localStorage.getItem(`tasks_${user.email}`) || "[]");
+        const updatedTasks = storedTasks.filter((task) => task.id !== id);
+        localStorage.setItem(`tasks_${user.email}`, JSON.stringify(updatedTasks));
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("tasksUpdated"));
+        }
+        setTasks(updatedTasks.filter((t) => !t.completed));
     };
 
-    const handleMarkDone = async (id: number) => {
-        const task = tasks.find((t) => t.id === id);
-        const updatedAll = tasks.map((t) =>
+    const handleMarkDone = (id: number) => {
+        const storedTasks: Task[] = JSON.parse(localStorage.getItem(`tasks_${user.email}`) || "[]");
+        const task = storedTasks.find((t) => t.id === id);
+
+        const updatedTasks = storedTasks.map((t) =>
             t.id === id ? { ...t, completed: true, completedAt: new Date().toISOString() } : t
         );
-        setTasks(updatedAll.filter((t) => !t.completed));
-        await saveAndSync(user.email, updatedAll);
+        localStorage.setItem(`tasks_${user.email}`, JSON.stringify(updatedTasks));
+        if (typeof window !== "undefined") {
+            window.dispatchEvent(new Event("tasksUpdated"));
+        }
+        setTasks(updatedTasks.filter((t) => !t.completed));
 
-        if (task?.date && "Notification" in window && Notification.permission === "granted") {
-            const deadline = new Date(`${task.date}T${task.time || "23:59"}`).getTime();
+        // Notify if the task was completed before its deadline
+        if (
+            task?.date &&
+            "Notification" in window &&
+            Notification.permission === "granted"
+        ) {
+            const deadlineStr = `${task.date}T${task.time || "23:59"}`;
+            const deadline = new Date(deadlineStr).getTime();
             if (deadline > Date.now()) {
                 new Notification("Task Completed Early!", {
                     body: `Great job! You finished "${task.title}" before the deadline.`,
@@ -193,15 +193,16 @@ export default function TaskList() {
         }
     };
 
-    const handleUpdate = async (id: number) => {
-        const updatedAll = tasks.map((t) =>
-            t.id === id
-                ? { ...t, title: titledit, description: descritionedit, date: dateedit, time: timeedit }
-                : t
+    const handleUpdate = (id: number) => {
+        const storedTasks: Task[] = JSON.parse(localStorage.getItem(`tasks_${user.email}`) || "[]");
+        const updatedTasks = storedTasks.map((task) =>
+            task.id === id
+                ? { ...task, title: titledit, description: descritionedit, date: dateedit, time: timeedit }
+                : task
         );
-        setTasks(updatedAll.filter((t) => !t.completed));
+        localStorage.setItem(`tasks_${user.email}`, JSON.stringify(updatedTasks));
+        setTasks(updatedTasks.filter((t) => !t.completed));
         setEditPopup(false);
-        await saveAndSync(user.email, updatedAll);
     };
 
     return (
