@@ -54,19 +54,28 @@ const MODES: {
 function buildSystemPrompt(mode: Mode, tasks: Task[]): string {
   if (mode === "chat") {
     const pending = tasks.filter((t) => !t.completed);
-    const done = tasks.filter((t) => t.completed).slice(0, 5);
+    const done = tasks.filter((t) => t.completed).sort((a, b) => {
+      if (!a.completedAt) return 1;
+      if (!b.completedAt) return -1;
+      return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
+    });
     const pendingCtx =
       pending.length > 0
-        ? `Pending tasks:\n${pending
+        ? `Pending tasks (${pending.length} total):\n${pending
           .map(
             (t) =>
-              `- [${t.type ?? "general"}] ${t.title}${t.priority ? ` (${t.priority} priority)` : ""}${t.date ? `, due ${t.date}` : ""}`
+              `- [${t.type ?? "general"}] ${t.title}${t.priority ? ` (${t.priority} priority)` : ""}${t.date ? `, due ${t.date}` : ""}${t.description ? `, note: ${t.description}` : ""}`
           )
           .join("\n")}`
         : "No pending tasks.";
     const doneCtx =
       done.length > 0
-        ? `\nRecently completed:\n${done.map((t) => `- ${t.title}`).join("\n")}`
+        ? `\nCompleted tasks (${done.length} total):\n${done
+          .map(
+            (t) =>
+              `- [${t.type ?? "general"}] ${t.title}${t.completedAt ? `, completed ${new Date(t.completedAt).toLocaleDateString()}` : ""}`
+          )
+          .join("\n")}`
         : "";
     return `You are a helpful productivity assistant. Be concise and practical.\n\nUser task data:\n${pendingCtx}${doneCtx}`;
   }
@@ -87,13 +96,32 @@ export default function AgentChat() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    let email: string | null = null;
+
+    const fetchTasks = async (userEmail: string) => {
+      try {
+        const res = await fetch(`/api/tasks?email=${encodeURIComponent(userEmail)}`);
+        const data = await res.json();
+        setTasks(data.tasks ?? []);
+      } catch {
+        setTasks([]);
+      }
+    };
+
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user?.email) {
-        const stored = localStorage.getItem(`tasks_${user.email}`);
-        setTasks(stored ? JSON.parse(stored) : []);
+        email = user.email;
+        fetchTasks(user.email);
       }
     });
-    return () => unsub();
+
+    const onUpdated = () => { if (email) fetchTasks(email); };
+    window.addEventListener("tasksUpdated", onUpdated);
+
+    return () => {
+      unsub();
+      window.removeEventListener("tasksUpdated", onUpdated);
+    };
   }, []);
 
   useEffect(() => {
@@ -199,10 +227,9 @@ export default function AgentChat() {
               </div>
               <p className="text-gray-300 font-semibold text-sm">{currentMode.label} mode</p>
               <p className="text-gray-500 text-xs max-w-xs">{currentMode.hint}</p>
-              {mode === "chat" && tasks.filter((t) => !t.completed).length > 0 && (
+              {mode === "chat" && tasks.length > 0 && (
                 <p className="text-xs text-amber-400/70">
-                  {tasks.filter((t) => !t.completed).length} pending task
-                  {tasks.filter((t) => !t.completed).length !== 1 ? "s" : ""} loaded as context
+                  {tasks.filter((t) => !t.completed).length} pending · {tasks.filter((t) => t.completed).length} completed
                 </p>
               )}
             </div>
